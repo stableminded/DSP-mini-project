@@ -353,18 +353,46 @@ def algorithm_section() -> None:
 	)
 
 
+def get_data_folder_options() -> Dict[str, str]:
+	"""Detect available datasets in Data/ folder contributed by collaborators."""
+	data_path = Path("./Data")
+	options = {}
+	
+	if data_path.exists():
+		for item in data_path.iterdir():
+			if item.is_dir() and item.name != "__pycache__":
+				audio_files = [
+					p for p in item.rglob("*")
+					if p.is_file() and p.suffix.lower() in SUPPORTED_EXTENSIONS
+				]
+				if audio_files:
+					options[f"{item.name} ({len(audio_files)} files)"] = str(item)
+	
+	return options
+
+
 def build_index_ui(engine: AudioFingerprintEngine) -> None:
 	st.subheader("Build Fingerprint Index")
-	dataset_choice = st.selectbox("Dataset", ["Custom Path", "GTZAN", "FMA"])
+
+	data_folder_options = get_data_folder_options()
+	dataset_choices = ["Custom Path", "GTZAN", "FMA"] + list(data_folder_options.keys())
+	dataset_choice = st.selectbox("Dataset", dataset_choices)
 
 	default_path = ""
 	if dataset_choice == "GTZAN":
 		default_path = "./Data/genres_original"
 	elif dataset_choice == "FMA":
 		default_path = "./Data/fma_small"
+	elif dataset_choice in data_folder_options:
+		default_path = data_folder_options[dataset_choice]
 
 	dataset_path = st.text_input("Dataset folder path", value=default_path)
 	max_files = st.number_input("Max files to index (0 = all)", min_value=0, value=100)
+
+	if data_folder_options:
+		with st.expander("Available Collaborative Datasets", expanded=False):
+			for name, path in data_folder_options.items():
+				st.write(f"📁 **{name}**: `{path}`")
 
 	col1, col2 = st.columns(2)
 	build_btn = col1.button("Build / Rebuild Index", type="primary")
