@@ -1,0 +1,500 @@
+=============================================================================
+SHAZAM-STYLE AUDIO FINGERPRINTING - USAGE GUIDE
+=============================================================================
+
+This guide explains how to use the Streamlit web app for audio fingerprinting.
+
+=============================================================================
+1. LAUNCHING THE APP
+=============================================================================
+
+Option 1: From Command Line (Recommended)
+------------------------------------------
+cd "c:\Users\Dhairya Mehta\Downloads\DSP Mini Project"
+& ".\.venv\Scripts\python.exe" -m streamlit run shazam.py
+
+The app will start and open automatically at:
+  Local URL: http://localhost:8501
+  Network URL: http://[your-ip]:8501
+
+Option 2: Using Activated Virtual Environment
+----------------------------------------------
+1. Open PowerShell in the project folder
+2. Run: & ".\.venv\Scripts\Activate.ps1"
+3. Run: streamlit run shazam.py
+
+
+=============================================================================
+2. SIDEBAR PARAMETERS (Left Panel)
+=============================================================================
+
+These parameters control how audio is analyzed. Adjust before building index.
+
+
+SAMPLE RATE (Dropdown)
+  Options: 16000, 22050, 44100
+  Default: 22050 Hz
+  Effect: Higher values = more detail but slower processing
+  When to change: 44100 for high-quality audio analysis
+  
+  
+N FFT (Dropdown)
+  Options: 1024, 2048, 4096
+  Default: 4096
+  Effect: FFT size affects frequency resolution
+    - 4096: Better frequency detail, slower
+    - 1024: Faster, less frequency resolution
+  When to change: Use 4096 for general use, 2048 if speed matters
+
+
+HOP LENGTH (Dropdown)
+  Options: 256, 512, 1024
+  Default: 512
+  Effect: Hop length affects time resolution
+    - 512: Good balance (default)
+    - 256: Better time resolution, more frames
+    - 1024: Fewer frames, faster
+
+
+PEAK NEIGHBORHOOD (Slider: 5-40)
+  Default: 20
+  Effect: Size of local region used to detect spectral peaks
+    - Higher (30-40): Stricter peak detection, fewer but stronger peaks
+    - Lower (5-15): More lenient, more peaks detected
+  When to change: Use 20 for general use; lower for noisy audio
+
+
+MIN PEAK AMPLITUDE (Slider: -80 to -5 dB)
+  Default: -40.0 dB
+  Effect: Only peaks above this amplitude threshold are kept
+    - Higher (-20 to -5): Only very loud peaks, fewer matches
+    - Lower (-60 to -40): More peaks including quieter ones
+  When to change: Use -40 as default; lower to -50 for quieter music
+
+
+FAN VALUE (Slider: 3-30)
+  Default: 15
+  Effect: Number of peak pairs per anchor peak
+    - Higher (20-30): More hash pairs, better recall, slower indexing
+    - Lower (3-10): Fewer pairs, faster, may miss matches
+  When to change: Use 15 as default; increase for larger datasets
+
+
+MIN DELTA T (Slider: 1-10)
+  Default: 1
+  Effect: Minimum time gap between peaks in a pair (in time bins)
+  Keep default: 1
+
+
+MAX DELTA T (Slider: 20-400)
+  Default: 200
+  Effect: Maximum time gap for peak pairs (larger = wider temporal window)
+    - 200: Standard, good balance
+    - 100: Shorter window, fewer pairs per peak
+    - 300+: Longer window, more pairs
+  When to change: Keep at 200 for general use
+
+
+=============================================================================
+3. TAB 1: INDEX BUILDER
+=============================================================================
+
+This tab builds a fingerprint database from audio files.
+
+
+3a. Dataset Selection
+---------------------
+
+DATASET DROPDOWN:
+  Options: "Custom Path", "GTZAN", "FMA"
+  
+  - Custom Path: Browse any folder with audio files
+  - GTZAN: If you have GTZAN dataset
+  - FMA: If you have Free Music Archive subset
+
+
+DATASET FOLDER PATH (Text Input):
+  
+  For Custom Path:
+    Examples:
+    - ./samples
+    - C:\Users\YourName\Music
+    - ./Data/my_songs
+    
+  For GTZAN:
+    ./Data/genres_original
+    (or wherever you downloaded it)
+    
+  For FMA:
+    ./Data/fma_small
+    (or ./Data/fma_medium / ./Data/fma_full)
+    
+  Supported audio formats: .wav, .mp3, .flac, .ogg, .m4a, .au
+
+
+MAX FILES TO INDEX (Number Input):
+  Default: 100
+  
+  Purpose: Limit how many files to index (0 = all files)
+  
+  Examples:
+  - 0: Index all files in folder (can be very slow)
+  - 10: Quick test with 10 files
+  - 50: Medium-sized test
+  - 100: Good default for testing
+  - 500+: For production datasets
+
+
+3b. Building the Index
+----------------------
+
+Button: "Build / Rebuild Index" (Primary/Blue Button)
+  Action: Scans folder, fingerprints all audio files, builds hash database
+  Time: Depends on number of files and parameters
+    - 10 files: ~10-30 seconds
+    - 100 files: ~2-5 minutes
+    - 1000 files: ~30-60 minutes
+  
+  Progress: Shows real-time status:
+    [1/100] INDEXED file1.mp3
+    [2/100] INDEXED file2.mp3
+    etc.
+    
+  When done: Displays summary:
+    - indexed: number of successfully indexed files
+    - failed: number that failed (if any)
+    - total_hashes: total fingerprint hashes created (~1M+ for 100 songs)
+    - total_tracks: number of songs in index
+
+
+Button: "Clear Index"
+  Action: Deletes all fingerprints from memory
+  Use when: You want to start fresh or load a different index
+
+
+3c. Index Persistence
+---------------------
+
+INDEX JSON FILE (Text Input):
+  Default: "fingerprint_index.json"
+  
+  Purpose: Filename to save/load fingerprint database
+  
+  Examples:
+  - fingerprint_index.json (saves in project folder)
+  - ./indexes/my_index.json
+  - C:\path\to\backup\index.json
+  
+  File size: Large! (~50MB for 1000 songs)
+
+
+Button: "Save Index"
+  Action: Saves all fingerprints to JSON file
+  Time: Slow (1-2 minutes for large indexes)
+  Use case: Save after building so you don't rebuild next time
+
+
+Button: "Load Index"
+  Action: Loads fingerprints from previously saved JSON
+  Time: Fast (10-30 seconds for large indexes)
+  Use case: Reuse index from previous session
+
+
+Bottom Info:
+  Shows: "Tracks in memory: X | Unique hash keys: Y"
+  This tells you how many songs are indexed and total unique hashes
+
+
+=============================================================================
+4. TAB 2: QUERY IDENTIFICATION
+=============================================================================
+
+This tab identifies (matches) an audio clip against the index.
+
+
+4a. Upload Audio Clip
+---------------------
+
+FILE UPLOADER:
+  Formats: mp3, wav, flac, ogg, m4a, au
+  Size: Can be full song or short clip (5-30 seconds recommended)
+  Tip: Extract a clip from one of the indexed songs for testing
+
+
+TOP K MATCHES (Slider: 1-10):
+  Default: 5
+  Effect: How many candidate matches to return
+    - 1: Only best match
+    - 3: Top 3 candidates
+    - 5: Top 5 candidates (good default)
+    - 10: Top 10 (for when you're unsure)
+
+
+4b. Running Identification
+--------------------------
+
+Button: "Run Identification" (Primary/Blue Button)
+  Action: Processes query clip and finds matches
+  Outputs shown:
+  
+  A. PROCESSING TRACE (Step-by-step):
+     Step 1: Loading and resampling query audio
+     Step 2: Spectrogram computed and converted to dB scale
+     Step 3: Constellation map peaks extracted
+     Step 4: Peak pairs converted to hashes
+     Step 5: Matching by hash collisions and offset voting
+     
+  B. QUERY METRICS (Card display):
+     - Query duration (s): Length of uploaded clip
+     - Detected peaks: Number of spectral peaks found
+     - Generated hashes: Number of fingerprint hashes created
+     
+     Example:
+       Query duration: 15.23
+       Detected peaks: 2,543
+       Generated hashes: 8,721
+
+
+4c. Constellation and Hash Samples
+-----------------------------------
+
+Expander: "Show constellation samples and hash samples"
+  
+  When expanded:
+  
+  PEAK PREVIEW TABLE:
+    Columns: time_bin, freq_bin, amplitude_db
+    Shows: First 12 detected peaks
+    Use: Verify peaks are being detected
+    
+  HASH PREVIEW TABLE:
+    Columns: hash (SHA-1), anchor_time_bin
+    Shows: First 12 generated hashes
+    Use: Verify fingerprints are created
+    
+  Example peak:
+    time_bin: 234, freq_bin: 1023, amplitude_db: -12.5
+    (Peak at time frame 234, frequency bin 1023, loudness -12.5 dB)
+
+
+4d. Spectrogram Visualization
+------------------------------
+
+Expander: "Show query spectrogram and peaks"
+  
+  When expanded: Shows color plot
+    X-axis: Time (seconds)
+    Y-axis: Frequency (log scale, Hz)
+    Colors: Brightness = loudness (dB)
+    Cyan dots: Detected peaks
+    
+  Use: Visually confirm peak detection is working
+
+
+4e. Matching Results
+---------------------
+
+SUCCESS MESSAGE:
+  "Best match: song_name.mp3"
+  "Votes: 234 | Best offset: 567 frames | Confidence: 0.8234"
+  
+  Interpretation:
+  - Votes: Number of hash collisions for this song
+  - Best offset: Time alignment in audio frames
+  - Confidence: Votes / total hashes (0.0 to 1.0)
+  - High confidence (>0.5) = strong match
+
+
+RESULTS TABLE: "Top Matches"
+  Columns:
+    - track_id: Song filename or ID
+    - votes: Number of matching hashes
+    - best_offset: Time alignment
+    - confidence: Match strength (0.0-1.0)
+  
+  Example:
+    track_id: song1.mp3, votes: 234, best_offset: 567, confidence: 0.82
+    track_id: song2.mp3, votes: 45,  best_offset: -89, confidence: 0.15
+    track_id: song3.mp3, votes: 12,  best_offset: 234, confidence: 0.04
+    
+  (First row = best match; subsequent rows = alternatives)
+
+
+=============================================================================
+5. TAB 3: ALGORITHM + FORMULAS
+=============================================================================
+
+This tab is for educational reference.
+
+Contains:
+  - DSP implementation note (core logic is hand-coded)
+  - Processing pipeline explanation (7 steps)
+  - Mathematical formulas (STFT, spectrogram, hash, offset vote)
+  
+Use this during viva/presentation to explain the algorithm.
+
+
+=============================================================================
+6. QUICK START EXAMPLE
+=============================================================================
+
+Scenario: You have 3 MP3 songs in ./samples folder
+
+
+Step 1: Launch App
+------------------
+& ".\.venv\Scripts\python.exe" -m streamlit run shazam.py
+
+
+Step 2: Set Parameters (if needed)
+-----------------------------------
+Sidebar stays at defaults (all parameters already good)
+
+
+Step 3: Build Index
+-------------------
+Tab 1 > Index Builder
+  - Dataset: "Custom Path"
+  - Dataset folder path: ./samples
+  - Max files: 0 (index all 3)
+  - Click "Build / Rebuild Index"
+  - Wait ~30 seconds
+  - See result: "indexed: 3, failed: 0, total_hashes: 1,116,755"
+
+
+Step 4: Save Index (Optional)
+------------------------------
+Tab 1 > Index Persistence
+  - Index file: "my_samples_index.json"
+  - Click "Save Index"
+  - Takes ~30 seconds
+
+
+Step 5: Test Matching
+---------------------
+Tab 2 > Query Identification
+  - Upload a 10-15 second clip from one of the songs
+  - Top K matches: 3
+  - Click "Run Identification"
+  - Should see: "Best match: correct_song.mp3"
+  - Confidence: 0.75+ (expected for clean audio)
+
+
+Step 6: Explore Results
+-----------------------
+  - Expand "Show constellation samples..." to see peaks/hashes
+  - Expand "Show query spectrogram..." to see visual peaks
+  - Look at "Top Matches" table to see alternatives
+
+
+=============================================================================
+7. WORKING WITH LARGER DATASETS
+=============================================================================
+
+GTZAN Dataset
+-------------
+Download: https://www.kaggle.com/datasets/andradaos/gtzan-dataset
+Extract to: ./Data/genres_original
+
+Tab 1:
+  - Dataset: "GTZAN"
+  - Dataset path: ./Data/genres_original
+  - Max files: 100 (start small for testing)
+  - Build index
+
+
+FMA Dataset
+-----------
+Download: https://github.com/mdeff/fma (fma_small.zip ~7GB)
+Extract to: ./Data/fma_small
+
+Tab 1:
+  - Dataset: "FMA"
+  - Dataset path: ./Data/fma_small
+  - Max files: 200
+  - Build index
+
+
+Custom Folder
+-------------
+Any folder with audio files:
+
+Tab 1:
+  - Dataset: "Custom Path"
+  - Dataset path: C:\Users\YourName\MyMusicFolder
+  - Max files: 0 (for all) or specify limit
+  - Build index
+
+
+=============================================================================
+8. TROUBLESHOOTING
+=============================================================================
+
+Problem: "ModuleNotFoundError: No module named 'streamlit'"
+Solution: pip install streamlit
+
+Problem: "Dataset folder does not exist"
+Solution: 
+  - Check path spelling and capitalization
+  - Use forward slashes: ./Data/songs (not .\Data\songs)
+  - Verify folder exists: C:\Users\...\DSP Mini Project\Data\songs
+
+Problem: "No supported audio files found"
+Solution:
+  - Verify files are: .mp3, .wav, .flac, .ogg, .m4a, .au
+  - Check folder has audio files (not subfolders only)
+  - Use Windows Explorer to confirm files are there
+
+Problem: "INDEXED: failed" messages
+Solution:
+  - Audio file may be corrupted
+  - Try converting to MP3 using ffmpeg: ffmpeg -i input.wav output.mp3
+  - Check file is valid: play it in Windows Media Player first
+
+Problem: "No match found" or very low confidence
+Solution:
+  - Query clip too short (use 5-30 seconds)
+  - Query is from different artist/version
+  - Increase fan_value in sidebar (more pairs = higher recall)
+  - Lower amp_min_db threshold (-50 instead of -40)
+  - Rebuild index with new parameters
+
+Problem: App is slow
+Solution:
+  - Reduce max_index_files to 50
+  - Lower hop_length to 256
+  - Lower n_fft to 2048
+  - Reduce fan_value to 10
+
+
+=============================================================================
+9. KEY TAKEAWAYS
+=============================================================================
+
+Sidebar Parameters:
+  - Use defaults first
+  - Adjust sample_rate/hop_length for speed vs quality trade-off
+  - Increase fan_value for harder-to-match audio
+  - Lower amp_min_db for quieter music
+
+Index Builder:
+  - Start with max_files=50 for testing
+  - Save index to reuse (loading is fast)
+  - Expect ~1M hashes per 100 songs
+
+Query Matching:
+  - Use 5-30 second clips
+  - Confidence >0.5 = strong match
+  - Check top 3-5 results
+  - Look at spectrogram to verify peaks
+
+File Paths:
+  - Use forward slashes: ./Data/songs
+  - Relative paths: ./samples, ./Data/fma_small
+  - Absolute paths: C:\Users\...\Downloads\songs
+  - No trailing slashes
+
+
+=============================================================================
+Questions? See DEVELOPMENT_README.md or VIVA_SHEET.md
+=============================================================================
