@@ -56,9 +56,16 @@ class AudioFingerprintEngine:
 		self.hash_db: Dict[str, List[Tuple[str, int]]] = defaultdict(list)
 		self.track_meta: Dict[str, Dict[str, float]] = {}
 
-	def load_audio(self, file_path: str) -> Tuple[np.ndarray, int]:
-		y, sr = librosa.load(file_path, sr=self.sample_rate, mono=True)
-		return y, sr
+	def load_audio(self, file_path: str, max_duration: float = 60.0) -> Tuple[np.ndarray, int]:
+		"""Load audio with duration limit to prevent memory overflow on Streamlit Cloud."""
+		try:
+			y, sr = librosa.load(file_path, sr=self.sample_rate, mono=True, duration=max_duration)
+			duration_actual = len(y) / sr
+			if duration_actual > max_duration:
+				y = y[: int(max_duration * sr)]
+			return y, sr
+		except Exception as e:
+			raise ValueError(f"Failed to load audio file. Supported: {SUPPORTED_EXTENSIONS}. Error: {e}") from e
 
 	def spectrogram_db(self, y: np.ndarray) -> np.ndarray:
 		stft = librosa.stft(y, n_fft=self.n_fft, hop_length=self.hop_length)
@@ -97,8 +104,9 @@ class AudioFingerprintEngine:
 				hashes.append((digest, t1))
 		return hashes
 
-	def fingerprint_file(self, file_path: str) -> Dict[str, object]:
-		y, sr = self.load_audio(file_path)
+	def fingerprint_file(self, file_path: str, max_duration: float = 60.0) -> Dict[str, object]:
+		"""Fingerprint with memory-safe defaults for cloud deployment."""
+		y, sr = self.load_audio(file_path, max_duration=max_duration)
 		spec_db = self.spectrogram_db(y)
 		peaks = self.find_peaks(spec_db)
 		hashes = self.generate_hashes(peaks)
@@ -234,22 +242,35 @@ class AudioFingerprintEngine:
 		self.hash_db = defaultdict(list, {k: [tuple(x) for x in v] for k, v in data["hash_db"].items()})
 
 
-def plot_spectrogram_with_peaks(spec_db: np.ndarray, peaks: List[Tuple[int, int, float]], max_points: int = 2500):
-	fig, ax = plt.subplots(figsize=(10, 4))
-	librosa.display.specshow(spec_db, x_axis="time", y_axis="log", cmap="magma", ax=ax)
-	ax.set_title("Log-Magnitude Spectrogram with Constellation Peaks")
-	ax.set_xlabel("Time")
-	ax.set_ylabel("Frequency")
+def plot_spectrogram_with_peaks(spec_db: np.ndarray, peaks: List[Tuple[int, int, float]], max_points: int = 1000):
+	"""Plot spectrogram with memory optimization for cloud deployment."""
+	try:
+		fig, ax = plt.subplots(figsize=(12, 5))
+		# Down-sample spectrogram for faster rendering on cloud
+		spec_display = spec_db[::2, ::2] if spec_db.size > 100000 else spec_db
+		librosa.display.specshow(spec_display, x_axis="time", y_axis="log", cmap="magma", ax=ax)
+		ax.set_title("Log-Magnitude Spectrogram with Constellation Peaks")
+		ax.set_xlabel("Time (frames)")
+		ax.set_ylabel("Frequency (Hz)")
 
-	if peaks:
-		sampled = peaks[:max_points]
-		xs = [p[0] for p in sampled]
-		ys = [p[1] for p in sampled]
-		ax.scatter(xs, ys, s=5, c="cyan", alpha=0.6, label="Peaks")
-		ax.legend(loc="upper right")
+		if peaks:
+			sampled = peaks[:min(max_points, len(peaks))]
+			xs = [p[0] for p in sampled]
+			ys = [p[1] for p in sampled]
+			ax.scatter(xs, ys, s=5, c="cyan", alpha=0.6, label=f"Peaks ({len(sampled)})")
+			ax.legend(loc="upper right")
 
-	plt.tight_layout()
-	return fig
+		if len(peaks) > max_points:
+			ax.text(0.02, 0.98, f"Showing {max_points}/{len(peaks)} peaks", 
+					transform=ax.transAxes, verticalalignment="top",
+					bbox=dict(boxstyle="round", facecolor="wheat", alpha=0.5))
+
+		plt.tight_layout()
+		plt.close()  # Close figure to free memory
+		return fig
+	except Exception as e:
+		st.warning(f"Could not plot spectrogram: {e}. File may be too large.")
+		return None
 
 
 def get_engine_from_ui() -> AudioFingerprintEngine:
@@ -413,9 +434,15 @@ def identify_query_ui(engine: AudioFingerprintEngine) -> None:
 	uploaded = st.file_uploader("Upload an audio clip", type=[e[1:] for e in SUPPORTED_EXTENSIONS])
 	top_k = st.slider("Top K matches", 1, 10, 5)
 
+	# File size check (Streamlit Cloud limit)
+	max_file_size_mb = 50  # 50 MB file size limit
+	if uploaded is not None and uploaded.size > max_file_size_mb * 1024 * 1024:
+		st.error(f"File too large. Maximum size: {max_file_size_mb} MB. Please upload a smaller file.")
+		uploaded = None
+
 	if st.button("Run Identification", type="primary"):
 		if uploaded is None:
-			st.error("Please upload an audio file.")
+			st.error("Please upload an audio file (max 50 MB).")
 			return
 		if len(engine.track_meta) == 0:
 			st.error("Index is empty. Build or load an index first.")
@@ -427,11 +454,15 @@ def identify_query_ui(engine: AudioFingerprintEngine) -> None:
 			query_path = temp_file.name
 
 		st.markdown("### Processing Trace")
-		st.write("Step 1: Loading and resampling query audio")
+		st.write("Step 1: Loading and resampling query audio (max 60 seconds)")
 		try:
-			fp = engine.fingerprint_file(query_path)
+			# Limit to 60 seconds to prevent memory overflow
+			fp = engine.fingerprint_file(query_path, max_duration=60.0)
+		except ValueError as exc:
+			st.error(f"Invalid audio file: {exc}")
+			return
 		except Exception as exc:  # noqa: BLE001
-			st.error(f"Could not fingerprint query: {exc}")
+			st.error(f"Could not fingerprint query (file may be corrupted): {exc}")
 			return
 		finally:
 			try:
@@ -463,10 +494,17 @@ def identify_query_ui(engine: AudioFingerprintEngine) -> None:
 
 		with st.expander("Show query spectrogram and peaks", expanded=True):
 			fig = plot_spectrogram_with_peaks(fp["spec_db"], fp["peaks"])
-			st.pyplot(fig)
+			if fig is not None:
+				st.pyplot(fig)
+			else:
+				st.info("Spectrogram too large to display. Matching still works.")
 
 		st.write("Step 5: Matching by hash collisions and offset voting")
-		candidates = engine.match_fingerprint(fp["hashes"], top_k=top_k)
+		try:
+			candidates = engine.match_fingerprint(fp["hashes"], top_k=top_k)
+		except Exception as exc:  # noqa: BLE001
+			st.error(f"Matching failed: {exc}")
+			return
 
 		if not candidates:
 			st.warning("No match found. Try tuning parameters or indexing more files.")
