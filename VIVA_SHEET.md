@@ -86,7 +86,10 @@ A5. Adaptive peak thresholds, compressed index storage, and robustness testing u
 
 ## 10. Demo Flow for Presentation (2-3 minutes)
 1. Open Streamlit app and show formulas tab.
-2. Build index on a small subset (fast demo).
-3. Upload query clip and run identification.
-4. Show spectrogram peaks and Top-K results.
-5. Show evaluation report with Top-1/Top-K metrics.
+2. Show available collaborative datasets from `Data/` folder (if available).
+3. Build index on a small subset (fast demo).
+4. Upload query clip and run identification.
+5. Show spectrogram peaks and Top-K results.
+6. Show evaluation report with Top-1/Top-K metrics.
+
+**Optional**: Mention collaborative workflow: "Teammates can push datasets to `Data/` folder, and they automatically appear in the app."

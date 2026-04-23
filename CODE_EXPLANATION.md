@@ -461,14 +461,62 @@ def export_index(self, output_file: str) -> None:
 
 ## Helper Functions
 
-### plot_spectrogram_with_peaks(spec_db, peaks, max_points=2500)
+### get_data_folder_options() → Dict[str, str]
 
-Displays spectrogram with detected peaks overlaid.
+**Purpose:** Auto-detect collaborative datasets in `Data/` folder contributed by team members.
+
+**Returns:** Dictionary mapping dataset names to folder paths.
+
+**Code:**
+```python
+def get_data_folder_options() -> Dict[str, str]:
+    """Detect available datasets in Data/ folder contributed by collaborators."""
+    data_path = Path("./Data")
+    options = {}
+    
+    if data_path.exists():
+        for item in data_path.iterdir():
+            if item.is_dir() and item.name != "__pycache__":
+                audio_files = [
+                    p for p in item.rglob("*")
+                    if p.is_file() and p.suffix.lower() in SUPPORTED_EXTENSIONS
+                ]
+                if audio_files:
+                    options[f"{item.name} ({len(audio_files)} files)"] = str(item)
+    
+    return options
+```
+
+**What it does:**
+- Scans `Data/` folder for subfolders
+- Counts audio files in each subfolder
+- Returns only folders with audio files
+- Displays file count in UI
+
+**Example:**
+```python
+options = get_data_folder_options()
+# {"gtzan_blues (10 files)": "./Data/gtzan_blues", "mymusic (15 files)": "./Data/mymusic"}
+```
+
+---
+
+### plot_spectrogram_with_peaks(spec_db, peaks, max_points=1000)
+
+Displays spectrogram with detected peaks overlaid. Optimized for cloud deployment.
+
+**Key improvements:**
+- Down-samples large spectrograms (50% reduction) for faster rendering
+- Closes figure after display to free memory
+- Returns `None` if spectrogram too large
 
 **Usage in UI:**
 ```python
 fig = plot_spectrogram_with_peaks(fp["spec_db"], fp["peaks"])
-st.pyplot(fig)
+if fig is not None:
+    st.pyplot(fig)
+else:
+    st.info("Spectrogram too large to display. Matching still works.")
 ```
 
 ---
@@ -490,20 +538,33 @@ Displays core mathematical formulas (STFT, dB conversion, hashing, voting).
 Explains 7-step pipeline with implementation scope.
 
 ### build_index_ui(engine)
-Tab 1 - Index building interface.
+Tab 1 - Index building interface with collaborative dataset support.
 
 **Controls:**
-- Dataset selection (Custom/GTZAN/FMA)
-- Folder path input
+- Dataset selection (Custom Path / GTZAN / FMA / Collaborative datasets from `Data/` folder)
+- Folder path input (auto-populated based on selection)
 - Max files slider
 - Build/Clear buttons
 - Save/Load index
+- Expandable section showing available collaborative datasets
+
+**Features:**
+- **Auto-detection**: Scans `Data/` folder for subfolders with audio files
+- **Dropdown integration**: Collaborator-contributed datasets appear as options
+- **File counting**: Shows number of audio files in each collaborative dataset
+- **Dynamic paths**: Folder path auto-updates when dataset selected
 
 **Displays:**
-- Progress bar
-- Build summary JSON
-- Failed files table
-- Track count
+- Progress bar with real-time file indexing status
+- Build summary JSON (indexed count, failed count, total hashes)
+- Failed files table with error reasons
+- Track count and metadata
+
+**Collaborative workflow:**
+1. Team member adds dataset to `Data/subfolder/` and pushes to GitHub
+2. Other members pull latest code (`git pull origin main`)
+3. Dataset automatically appears in dropdown
+4. Select dataset and build index - no code changes needed
 
 ### identify_query_ui(engine)
 Tab 2 - Query matching interface.
